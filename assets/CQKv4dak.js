@@ -77558,7 +77558,10 @@ function print() { __p += __j.call(arguments, '') }
                 isRelatedToAccount: !1,
                 cfsConnect: 0,
                 uploadFileProgress: 0,
-                uploadState: 0
+                uploadState: 0,
+				bedSize_x: 350,
+				bedSize_y: 350,
+				bedSize_z: 350
             };
             if (Kt().currentDevice != "")
                 for (const o of Kt().data.printerList) {
