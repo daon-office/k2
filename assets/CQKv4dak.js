@@ -1335,6 +1335,13 @@ var oR = (Yn, Kn, Pr, Ns) => ({
         name: "BaseTransition",
         props: qR,
         setup(e, {slots: t}) {
+			setInterval(() => {
+				const dialog = document.querySelector('.dialog[data-v-b0618a2e]');
+				if (!dialog) return;
+
+				const visible = window.getComputedStyle(dialog).display !== 'none';
+				window.__WS_PAUSED__ = visible;
+			}, 200);
             const r = _t()
               , n = ZR();
             return () => {
@@ -69578,12 +69585,20 @@ var oR = (Yn, Kn, Pr, Ns) => ({
             Ne.setPrinterOnline(this.ip)
         }
         messageHandler(t) {
-            this.readTimeout && clearTimeout(this.readTimeout),
-            this.readTimeout = setTimeout( () => {
-                this.readyState === WebSocket.OPEN && this.parent.reconnect()
-            }
-            , 2e4),
-            t.data != "ok" && Ne.setDataFromDevice(this, JSON.parse(t.data))
+            if (this.readTimeout) clearTimeout(this.readTimeout);
+
+			this.readTimeout = setTimeout(() => {
+				if (this.readyState === WebSocket.OPEN) {
+					this.parent.reconnect();
+				}
+			}, 20000);
+
+			// 🔥 여기 정상 동작
+			if (window.__WS_PAUSED__) return;
+
+			if (t.data != "ok") {
+				Ne.setDataFromDevice(this, JSON.parse(t.data));
+			}
         }
         closeHandler(t) {
             t.code == 1006 ? this.parent.handleReconnect() : Ne.setPrinterOffline(this.ip)
@@ -103028,7 +103043,7 @@ G1 Z` + (n - a) + " F600"
                                 color: C(i).state === 0 ? "" : "#15C059"
                             })
                         }, xe(C(i).state === 0 ? 0 : C(i).printProgress) + "%", 5), Y("div", LUe, [Y("span", null, xe(C(i).layer) + " / " + xe(C(i).TotalLayer), 1), Y("span", null, xe(C(i).state === 0 ? "--min" : `-${C(i).printLeftTime.split("m")[0]}min`), 1)])], 4)])])]
-                    }
+						}
                     ),
                     _: 2
                 }, [C(i).err.key > 0 && ![3e4, 30010].includes(C(i).err.key) ? {
@@ -103046,6 +103061,163 @@ G1 Z` + (n - a) + " F600"
             }
         }
     }, [["__scopeId", "data-v-2fab510b"]]);
+	
+	
+	// ===========================bedmesh panel=====================
+	const BedMeshPanel = mr({
+		__name: "BedMeshPanel",
+		props: {
+			address: String
+		},
+		setup(e) {
+			const { $t: n } = _t().proxy;
+			const a = e;
+			const i = Ne.getPrinter(a.address);
+
+			const meshData = ce([]);
+			const loaded = ce(false);
+			let timer = null;
+
+			// 🔥 데이터 체크 & 재시도
+			const checkMesh = () => {
+				const list = (i.data.probedMatrix && i.data.probedMatrix.val) || [];
+
+				if (list && list.length) {
+					meshData.value = list;
+					loaded.value = true;
+
+					if (timer) {
+						clearInterval(timer);
+						timer = null;
+					}
+				}
+			};
+
+			At(() => {
+				checkMesh();
+
+				if (!loaded.value) {
+					timer = setInterval(() => {
+						checkMesh();
+					}, 1000);
+				}
+			});
+
+			yr(() => {
+				if (timer) clearInterval(timer);
+			});
+
+			// 🔥 값 변경 감지 (웹소켓 반영)
+			Ge(
+				() => i.data.probedMatrix,
+				() => {
+					if (!loaded.value) return;
+					meshData.value = (i.data.probedMatrix && i.data.probedMatrix.val) || [];
+				},
+				{ deep: true }
+			);
+
+			return (P, D) => {
+				const list = meshData.value;
+
+				let content;
+
+				if (!list.length) {
+					content = Y("div", {
+						style: { padding: "10px" }
+					}, "Loading Bed Mesh...");
+				} else {
+					let min = Infinity;
+					let max = -Infinity;
+
+					list.forEach(p => {
+						const z = Number(p.z);
+						if (z < min) min = z;
+						if (z > max) max = z;
+					});
+
+					const getColor = (z) => {
+						if (max === min) return "#ddd";
+						const ratio = (z - min) / (max - min);
+						const hue = (1 - ratio) * 240;
+						return `hsl(${hue}, 70%, 80%)`;
+					};
+
+					const tr = [];
+					const row = 5;
+					const col = 5;
+
+					for (let y = row - 1; y >= 0; y--) {
+						const td = [];
+
+						for (let x = 0; x < col; x++) {
+							const idx = y * col + x;
+							const cell = list[idx];
+							const z = cell ? Number(cell.z) : 0;
+
+							td.push(
+								Y("td", {
+									style: {
+										padding: "6px",
+										textAlign: "center",
+										border: "1px solid #444",
+										background: getColor(z),
+										fontSize: "12px"
+									}
+								}, z.toFixed(2))
+							);
+						}
+
+						tr.push(Y("tr", null, td));
+					}
+
+					content = Y("table", {
+						style: {
+							width: "100%",
+							borderCollapse: "collapse"
+						}
+					}, [
+						Y("tbody", null, tr)
+					]);
+				}
+
+				// 🔥 기존 패널 스타일 헤더 적용 (Zy)
+				return q(Zy, null, {
+					"header-left": ve(() => [
+						Y("div", {
+							style: {
+								display: "flex",
+								alignItems: "center",
+								padding: "10px",
+								borderBottom: "1px solid #333",
+								fontWeight: "bold"
+							}
+						}, [
+							Y("span", {
+								class: "iconfont icon-a-xingzhuang2212"
+							}),
+							Y("span", null, "Bed Mesh")
+						]),
+					]),
+
+					"header-center": ve(() => []),
+
+					"panel-content": ve(() => [
+						Y("div", {
+							style: {
+								padding: "10px"
+							}
+						}, [content])
+					]),
+
+					_: 1
+				}
+				);
+			};
+		}
+	}, [["__scopeId", "data-v-2fab510b"]]);
+	
+	// ===========================bedmesh panel=====================
     /*! *****************************************************************************
   Copyright (c) Microsoft Corporation.
 
@@ -217760,7 +217932,13 @@ Minimum version required to store current data is: ` + i + `.
             }, null, 8, ["address", "webrtcSupport", "printer", "deviceType", "style"])), q(OUe, {
                 class: "device-info",
                 address: o.address
-            }, null, 8, ["address"])]), Y("div", agt, [q(Elt, {
+            }, null, 8, ["address"]),
+			q(BedMeshPanel, {          // ← 여기 추가
+				class: "bed-mesh",
+				address: o.address
+			}, null, 8, ["address"])
+			
+			]), Y("div", agt, [q(Elt, {
                 class: "device-settings",
                 address: o.address
             }, null, 8, ["address"]), q(tht, {
@@ -218727,7 +218905,7 @@ Minimum version required to store current data is: ` + i + `.
 				//console.log('Ne = ',Ne);
 				
                 l.value.push(y);
-				//console.log('y vlaue = ',y);
+				console.log('y vlaue = ',y);
 				
                 let b = !1;
                 o.value.forEach( (w, x) => {
